@@ -1,5 +1,6 @@
 
 using Microsoft.EntityFrameworkCore;
+using ServerHeThongKiem.Services;
 var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
@@ -8,6 +9,7 @@ builder.Services.AddDbContext<ServerHeThongKiem.Services.ApplicationDbContext>(o
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     options.UseSqlServer(connectionString);
 });
+builder.Services.AddHostedService<MqttWorkerService>();
 
 var app = builder.Build();
 

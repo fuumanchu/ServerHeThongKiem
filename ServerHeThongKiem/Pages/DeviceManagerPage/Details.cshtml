@@ -1,0 +1,110 @@
+﻿@page
+@model ServerHeThongKiem.Pages.DeviceManagerPage.DetailsModel
+@{
+    ViewData["Title"] = "Giám Sát Chi Tiết";
+
+    // Hàm hỗ trợ kiểm tra ngưỡng (Sử dụng cho các giá trị Double)
+    string GetStatusClass(string value, string range)
+    {
+        if (range == "ON/OFF" || string.IsNullOrEmpty(range)) return "bg-dark";
+
+        try
+        {
+            var bounds = range.Split('-');
+            double min = double.Parse(bounds[0]);
+            double max = double.Parse(bounds[1]);
+            double val = double.Parse(value);
+
+            return (val >= min && val <= max) ? "bg-success" : "bg-danger";
+        }
+        catch { return "bg-secondary"; }
+    }
+}
+
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="bi bi-cpu"></i> Hệ Thống: @Model.Device.DeviceID</h2>
+        <a asp-page="./Index" class="btn btn-outline-secondary">Quay lại danh sách</a>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-info text-white"><h5>01. Thông Số Cảm Biến (Analog Inputs)</h5></div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Stt</th>
+                        <th>Tên thông số</th>
+                        <th>Giá trị hiện tại</th>
+                        <th>Ngưỡng an toàn</th>
+                        <th>Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Device.Inputs.Where(i => i.SettingRange.Contains("-")).OrderBy(i => i.Order))
+                    {
+                        <tr>
+                            <td>@item.Order</td>
+                            <td><strong>@item.Name</strong></td>
+                            <td><span class="badge @GetStatusClass(item.Value, item.SettingRange) fs-6">@item.Value</span></td>
+                            <td><code>@item.SettingRange</code></td>
+                            <td>
+                                @if (GetStatusClass(item.Value, item.SettingRange) == "bg-success")
+                                {
+                                    <span class="text-success"><i class="bi bi-check-circle-fill"></i> Bình thường</span>
+                                }
+                                else
+                                {
+                                    <span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Cảnh báo</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white"><h5>02. Bể Điện Phân (0-5A)</h5></div>
+                <table class="table table-sm">
+                    <thead><tr><th>Tên bể</th><th>Cường độ (A)</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in Model.Device.Outputs.Where(o => o.Name.Contains("Bể Điện Phân")).OrderBy(o => o.Order))
+                        {
+                            <tr>
+                                <td>@item.Name</td>
+                                <td>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar bg-warning text-dark" style="width: @(double.Parse(item.Value) * 20)%">@item.Value A</div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-dark text-white"><h5>03. Trạng Thái Thiết Bị (Digital)</h5></div>
+                <div class="card-body p-0">
+                    @foreach (var item in Model.Device.Inputs.Where(i => i.SettingRange == "ON/OFF")
+                        .Cast<dynamic>()
+                        .Concat(Model.Device.Outputs.Where(o => o.SettingRange == "ON/OFF").Cast<dynamic>()))
+                    {
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            @item.Name
+                            <span class="badge @(item.Status == "ON" ? "bg-success" : "bg-danger") rounded-pill">
+                                @(item.Status == "ON" ? "ĐANG CHẠY" : "ĐANG DỪNG")
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
