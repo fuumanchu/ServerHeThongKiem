@@ -10,21 +10,28 @@ namespace ServerHeThongKiem.Models
 
         // --- Thông tin quản lý (Trang 3) ---
         [Required]
-        public string DeviceID { get; set; } = ""; // Ví dụ: TH0001 
+        public string DeviceID { get; set; } = ""; 
         public string DeviceName { get; set; } = "Hệ Thống Kiềm Trường Học"; 
-        public string Customer { get; set; } = ""; // Trường THCS Hùng Vương 01 
+        public string Customer { get; set; } = ""; 
         public string Address { get; set; } = ""; 
         public string Phone { get; set; } = ""; 
         public DateTime CreateDate { get; set; } = DateTime.Now; 
 
         // --- Trạng thái vận hành ---
-        public string Status { get; set; } = "Offline"; // Online, Offline, Alarm [cite: 118]
-        public bool IsAutoMode { get; set; } = true; // Chế độ Tự động/Thủ công [cite: 75, 76]
+        public string Status { get; set; } = "Offline"; 
+        public bool IsAutoMode { get; set; } = true; 
 
-        // --- Danh sách I/O (Trang 4) ---
-        // Sử dụng quan hệ 1-nhiều trong Entity Framework
         public List<DeviceInput> Inputs { get; set; } = new List<DeviceInput>(); 
-        public List<DeviceOutput> Outputs { get; set; } = new List<DeviceOutput>(); 
+        public List<DeviceOutput> Outputs { get; set; } = new List<DeviceOutput>();
+
+        public DeviceModel()
+        {
+            Inputs = new List<DeviceInput>();
+            Outputs = new List<DeviceOutput>();
+        }
+
+        
+
     }
 
     public class DeviceInput
