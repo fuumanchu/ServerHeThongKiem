@@ -3,16 +3,16 @@
 @{
     ViewData["Title"] = "Giám Sát Chi Tiết";
 
-    // Hàm hỗ trợ kiểm tra ngưỡng (Sử dụng cho các giá trị Double)
     string GetStatusClass(string value, string range)
     {
-        if (range == "ON/OFF" || string.IsNullOrEmpty(range)) return "bg-dark";
+        if (range == "ON/OFF" || range == "Chỉ Số" || string.IsNullOrEmpty(range)) return "bg-dark";
 
         try
         {
-            var bounds = range.Split('-');
-            double min = double.Parse(bounds[0]);
-            double max = double.Parse(bounds[1]);
+            // Tách ngưỡng hỗ trợ cả dấu '-' và dấu '÷'
+            var bounds = range.Contains("÷") ? range.Split('÷') : range.Split('-');
+            double min = double.Parse(bounds[0].Trim());
+            double max = double.Parse(bounds[1].Trim());
             double val = double.Parse(value);
 
             return (val >= min && val <= max) ? "bg-success" : "bg-danger";
@@ -23,40 +23,74 @@
 
 <div class="container-fluid mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2><i class="bi bi-cpu"></i> Hệ Thống: @Model.Device.DeviceID</h2>
+        <div>
+            <h2><i class="bi bi-cpu"></i> Hệ Thống: @Model.Device.DeviceID</h2>
+            <p class="text-muted">@Model.Device.Customer - @Model.Device.Address</p>
+        </div>
         <a asp-page="./Index" class="btn btn-outline-secondary">Quay lại danh sách</a>
     </div>
 
+    @* --- NHÓM 1: CẢM BIẾN VÀ CHỈ SỐ (ANALOG & COUNTERS) --- *@
     <div class="card shadow-sm mb-4">
-        <div class="card-header bg-info text-white"><h5>01. Thông Số Cảm Biến (Analog Inputs)</h5></div>
+        <div class="card-header bg-info text-white"><h5>01. Thông Số Đo Lường & Chỉ Số</h5></div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Stt</th>
+                        <th width="50">Stt</th>
                         <th>Tên thông số</th>
                         <th>Giá trị hiện tại</th>
-                        <th>Ngưỡng an toàn</th>
+                        <th>Ngưỡng / Loại</th>
                         <th>Trạng thái</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in Model.Device.Inputs.Where(i => i.SettingRange.Contains("-")).OrderBy(i => i.Order))
+                    @* Lấy tất cả Input có ngưỡng (chứa ÷ hoặc -) *@
+                    @* Và các Output có giá trị là "Chỉ Số" *@
+                    @{
+                        var analogData = Model.Device.Inputs
+                        .Where(i => i.SettingRange.Contains("÷") || i.SettingRange.Contains("-"))
+                        .Cast<dynamic>()
+                        .Concat(Model.Device.Outputs.Where(o => o.SettingRange == "Chỉ Số").Cast<dynamic>())
+                        .OrderBy(x => x.Order);
+                    }
+                    @foreach (var item in analogData)
                     {
+                        // Xác định Type để đặt ID khớp với SignalR (val-Input-1 hoặc val-Output-1)
+                        // Vì bạn dùng .Cast<dynamic>(), chúng ta có thể kiểm tra kiểu gốc hoặc thuộc tính riêng
+                        string itemType = item.GetType().Name.Contains("Input") ? "Input" : "Output";
+                        string elementId = $"val-{itemType}-{item.Order}";
+                        string statusTextId = $"status-text-{itemType}-{item.Order}";
+
                         <tr>
                             <td>@item.Order</td>
                             <td><strong>@item.Name</strong></td>
-                            <td><span class="badge @GetStatusClass(item.Value, item.SettingRange) fs-6">@item.Value</span></td>
+                            <td>
+                                @* QUAN TRỌNG: Thêm id để JavaScript tìm thấy *@
+                                <span id="@elementId" class="badge @GetStatusClass(item.Value, item.SettingRange) fs-6">
+                                    @item.Value
+                                </span>
+                            </td>
                             <td><code>@item.SettingRange</code></td>
                             <td>
-                                @if (GetStatusClass(item.Value, item.SettingRange) == "bg-success")
-                                {
-                                    <span class="text-success"><i class="bi bi-check-circle-fill"></i> Bình thường</span>
-                                }
-                                else
-                                {
-                                    <span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Cảnh báo</span>
-                                }
+                                @* Thêm id cho phần text trạng thái để cập nhật chữ "Bình thường/Cảnh báo" *@
+                                <div id="@statusTextId">
+                                    @if (item.SettingRange == "Chỉ Số")
+                                    {
+                                        <span class="text-primary"><i class="bi bi-info-circle"></i> Đang ghi nhận</span>
+                                    }
+                                    else
+                                    {
+                                        @if (GetStatusClass(item.Value, item.SettingRange) == "bg-success")
+                                        {
+                                            <span class="text-success"><i class="bi bi-check-circle-fill"></i> Bình thường</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Cảnh báo</span>
+                                        }
+                                    }
+                                </div>
                             </td>
                         </tr>
                     }
@@ -66,41 +100,69 @@
     </div>
 
     <div class="row">
+        @* --- NHÓM 2: BỂ ĐIỆN PHÂN --- *@
         <div class="col-lg-6">
             <div class="card shadow-sm mb-4">
-                <div class="card-header bg-primary text-white"><h5>02. Bể Điện Phân (0-5A)</h5></div>
-                <table class="table table-sm">
-                    <thead><tr><th>Tên bể</th><th>Cường độ (A)</th></tr></thead>
-                    <tbody>
-                        @foreach (var item in Model.Device.Outputs.Where(o => o.Name.Contains("Bể Điện Phân")).OrderBy(o => o.Order))
-                        {
-                            <tr>
-                                <td>@item.Name</td>
-                                <td>
-                                    <div class="progress" style="height: 20px;">
-                                        <div class="progress-bar bg-warning text-dark" style="width: @(double.Parse(item.Value) * 20)%">@item.Value A</div>
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <div class="card-header bg-primary text-white"><h5>02. Dòng Điện Bể Điện Phân (0-5A)</h5></div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead><tr><th>Tên bể</th><th>Cường độ (A)</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in Model.Device.Outputs.Where(o => o.Name.Contains("Bể Điện Phân")).OrderBy(o => o.Order))
+                            {
+                                <tr>
+                                    <td width="40%">@item.Name</td>
+                                    <td>
+                                        @{
+                                            double.TryParse(item.Value, out double val);
+                                        }
+                                        <div class="progress" style="height: 20px;">
+                                            <div id="progress-bar-Output-@item.Order"
+                                                 class="progress-bar bg-warning text-dark"
+                                                 style="width: @(val * 20)%">
+                                                <span id="val-Output-@item.Order">@item.Value</span> A
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
+        @* --- NHÓM 3: ĐIỀU KHIỂN & TRẠNG THÁI (DIGITAL) --- *@
         <div class="col-lg-6">
             <div class="card shadow-sm mb-4">
-                <div class="card-header bg-dark text-white"><h5>03. Trạng Thái Thiết Bị (Digital)</h5></div>
-                <div class="card-body p-0">
-                    @foreach (var item in Model.Device.Inputs.Where(i => i.SettingRange == "ON/OFF")
-                        .Cast<dynamic>()
-                        .Concat(Model.Device.Outputs.Where(o => o.SettingRange == "ON/OFF").Cast<dynamic>()))
+                <div class="card-header bg-dark text-white"><h5>03. Điều Khiển Hệ Thống (ON/OFF)</h5></div>
+                <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
+                    @{
+                        // Phân loại để biết cái nào là Input, cái nào là Output khi gửi lên Server
+                        var digitalInputs = Model.Device.Inputs.Where(i => i.SettingRange == "ON/OFF")
+                        .Select(i => new { i.Id, i.Order, i.Name, i.Status, Type = "Input" });
+                        var digitalOutputs = Model.Device.Outputs.Where(o => o.SettingRange == "ON/OFF")
+                        .Select(o => new { o.Id, o.Order, o.Name, o.Status, Type = "Output" });
+
+                        var allControls = digitalInputs.Concat(digitalOutputs).OrderBy(x => x.Order);
+                    }
+
+                    @foreach (var item in allControls)
                     {
-                        <div class="list-group-item d-flex justify-content-between align-items-center">
-                            @item.Name
-                            <span class="badge @(item.Status == "ON" ? "bg-success" : "bg-danger") rounded-pill">
-                                @(item.Status == "ON" ? "ĐANG CHẠY" : "ĐANG DỪNG")
-                            </span>
+                        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+                            <span><small class="text-muted">#@item.Order</small> <strong>@item.Name</strong></span>
+
+                            <div class="form-check form-switch">
+                                @* Sử dụng item.Order cho ID để JS dễ dàng tìm thấy *@
+                                <input class="form-check-input" type="checkbox" role="switch"
+                                       id="switch-@item.Type-@item.Order"
+                                       @(item.Status == "ON" ? "checked" : "")
+                                       onchange="toggleDeviceStatus(@item.Order, '@item.Type', this.checked)">
+
+                                <label class="form-check-label ms-2" id="label-@item.Type-@item.Order">
+                                    @(item.Status == "ON" ? "ON" : "OFF")
+                                </label>
+                            </div>
                         </div>
                     }
                 </div>
@@ -108,3 +170,130 @@
         </div>
     </div>
 </div>
+
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Xsrf
+@Html.AntiForgeryToken()
+@section Scripts {
+    <script>
+        function toggleDeviceStatus(order, type, isOn) {
+
+
+            const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
+            if (!tokenElement) {
+                console.error("Không tìm thấy Antiforgery Token!");
+                return;
+            }
+            const payload = {
+                order: parseInt(order),
+                type: type,
+                state: isOn ? "ON" : "OFF"
+            };
+
+            fetch(`?handler=Toggle&id=@Model.Device.Id`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "RequestVerificationToken":
+                        document.querySelector('input[name="__RequestVerificationToken"]').value
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(async res => {
+                if (!res.ok) {
+                    showLog(order, type, isOn);
+                    const text = await res.text();
+                    throw text;
+                }
+                else{
+                    const text = await res.text();
+                    alert("Lỗi từ server: " + text);
+                }
+            })
+            .catch(err => {
+                alert("Lỗi gửi lệnh: " + err);
+            });
+            //thêm log
+            
+        }
+
+        function showLog(order, type, isOn) {
+            // 1. Cập nhật chữ trên Label ngay lập tức
+            // Lưu ý: Đảm bảo ID trong HTML là id="label-${type}-${order}"
+            const label = document.querySelector(`[id^="label-${type}-"]`);
+            if (label) label.textContent = isOn ? "ON" : "OFF";
+
+            // 2. Tạo Toast thông báo (Log)
+            const logEntry = document.createElement("div");
+            logEntry.className = "alert alert-success alert-dismissible fade show position-fixed bottom-0 end-0 m-3";
+            logEntry.style.zIndex = "9999";
+            logEntry.innerHTML = `
+                <strong>Thành công!</strong> Thiết bị #${order} (${type}) -> <strong>${isOn ? "BẬT" : "TẮT"}</strong>.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+
+            document.body.appendChild(logEntry);
+
+            // Tự động xóa sau 3 giây
+            setTimeout(() => {
+                logEntry.classList.remove('show');
+                setTimeout(() => logEntry.remove(), 500);
+            }, 3000);
+        }
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/deviceHub")
+            .build();
+
+        connection.start().then(() => {
+            console.log("Kết nối SignalR đã được thiết lập.");
+
+            connection.on("NotifyUpdate", function (data) {
+                // 1. Kiểm tra thiết bị
+                // Lưu ý: data.deviceId phải khớp chính xác (viết hoa/thường) với dữ liệu từ Server gửi xuống
+                if (data.deviceId != "@Model.Device.DeviceID") return;
+
+                // --- XỬ LÝ 1: CẬP NHẬT GIÁ TRỊ SỐ & CHỮ (Analog & Text) ---
+                const element = document.getElementById(`val-${data.type}-${data.order}`);
+                if (element) {
+                    element.innerText = data.value;
+
+                    // Hiệu ứng nháy vàng
+                    element.style.transition = "all 0.3s";
+                    const originalBg = element.style.backgroundColor;
+                    element.style.backgroundColor = "#ffc107"; // Vàng
+
+                    setTimeout(() => {
+                        element.style.backgroundColor = originalBg; // Trả về màu cũ
+                    }, 500);
+                }
+
+                // --- XỬ LÝ 2: CẬP NHẬT THANH PROGRESS BAR (Bể điện phân) ---
+                const progressBar = document.getElementById(`progress-bar-${data.type}-${data.order}`);
+                if (progressBar) {
+                    const numericValue = parseFloat(data.value);
+                    // Giả sử thang đo 0-5A. Tính % = (Giá trị / 5) * 100 => Giá trị * 20
+                    const percent = numericValue * 20;
+                    progressBar.style.width = `${percent}%`;
+                }
+
+                // --- XỬ LÝ 3: CẬP NHẬT NÚT GẠT (Digital Switches) ---
+                // Để khi bật/tắt từ MQTT hoặc thiết bị thật, giao diện Web tự nhảy theo
+                const switchInput = document.getElementById(`switch-${data.type}-${data.order}`);
+                const switchLabel = document.getElementById(`label-${data.type}-${data.order}`);
+
+                if (switchInput) {
+                    // Nếu giá trị là "ON" hoặc "1" -> true
+                    const isOn = (data.value.toUpperCase() === "ON" || data.value === "1");
+                    switchInput.checked = isOn;
+                    if(switchLabel) switchLabel.innerText = isOn ? "ON" : "OFF";
+                }
+            });
+        }).catch(err => console.error(err.toString()));
+    </script>
+
+
+}
+

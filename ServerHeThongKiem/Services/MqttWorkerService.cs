@@ -1,9 +1,12 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using MQTTnet;
 using MQTTnet.Client; 
 using ServerHeThongKiem.Models;
 using ServerHeThongKiem.Services;
+using ServerHeThongKiem.Services.Interfaces;
 using System.Text;
+using System.Windows; 
 
 namespace ServerHeThongKiem.Services
 {
@@ -11,18 +14,23 @@ namespace ServerHeThongKiem.Services
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MqttWorkerService> _logger;
-        private IMqttClient _mqttClient;
-
-        public MqttWorkerService(IServiceScopeFactory scopeFactory, ILogger<MqttWorkerService> logger)
+        private readonly IMqttClient _mqttClient;
+        private readonly IDeviceCacheService _deviceCache;
+        private readonly IHubContext<DeviceHub> _hubContext;
+        public static IMqttClient Client { get; private set; } = null!;
+        public MqttWorkerService(IServiceScopeFactory scopeFactory, ILogger<MqttWorkerService> logger, IDeviceCacheService deviceCache, IMqttClient mqttClient, IHubContext<DeviceHub> hubContext)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
+            _deviceCache = deviceCache;
+            _mqttClient = mqttClient;
+            _hubContext = hubContext;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            var factory = new MqttFactory();
-            _mqttClient = factory.CreateMqttClient();
+            await _deviceCache.ReloadFromDatabaseAsync();
+           
 
             var options = new MqttClientOptionsBuilder()
                 .WithTcpServer("localhost", 1883)
@@ -70,26 +78,51 @@ namespace ServerHeThongKiem.Services
 
             string deviceId = topicParts[1];
 
-            using (var scope = _scopeFactory.CreateScope())
+            if(!_deviceCache.ExistsDeviceID(deviceId))
             {
-                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-                var device = await context.Devices
-                    .Include(d => d.Inputs)
-                    .FirstOrDefaultAsync(d => d.DeviceID == deviceId);
-
-                if (device != null)
-                {
-                    var tdsInput = device.Inputs.FirstOrDefault(i => i.Name == "CB TDS 1");
-                    if (tdsInput != null)
-                    {
-                        tdsInput.Value = payload;
-                        device.Status = "Online";
-                        await context.SaveChangesAsync();
-                        _logger.LogInformation($"Đã cập nhật TDS cho {deviceId}: {payload}");
-                    }
-                }
+                _logger.LogWarning($"Nhận dữ liệu từ thiết bị chưa đăng ký: {deviceId}");
+                return;
             }
+            else
+            {
+                //hiện message dữ liệu nhận được để test
+                _logger.LogInformation($"Dữ liệu từ {deviceId}: {payload}");
+                //hithông báo đã nhận dữ liệu từ thiết bị đã đăng ký
+                _logger.LogInformation($"Đã nhận dữ liệu từ thiết bị đã đăng ký: {deviceId}");
+                //hiện thị dữ liệu kiểu message box 
+                var parts = payload.Split('|');
+                var updateData = new
+                {
+                    deviceId = deviceId,
+                    type = parts[0],  // "Input" hoặc "Output"
+                    order = parts[1], // STT (1-23)
+                    value = parts[2]  // Giá trị đo được
+                };
+                await _hubContext.Clients.All.SendAsync("NotifyUpdate", updateData);
+
+            }
+        }
+
+
+        public async Task PublishMessageAsync(string topic, string payload)
+        {
+            if (_mqttClient == null || !_mqttClient.IsConnected)
+            {
+                _logger.LogWarning("MQTT client chưa kết nối. Không thể gửi tin nhắn.");
+                return;
+            }
+            if(!_deviceCache.ExistsDeviceID(topic.Split('/')[1]))
+            {
+                _logger.LogWarning($"Không thể gửi tin nhắn đến thiết bị chưa đăng ký: {topic}");
+                return;
+            }
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic($"Devices/{topic}/Command")
+                .WithPayload(payload)
+                .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
+                .Build();
+            _logger.LogInformation($"Đã gửi lệnh tới {topic}: {payload}");
+
         }
     } 
 } 
