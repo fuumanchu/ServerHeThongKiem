@@ -10,7 +10,6 @@ namespace ServerHeThongKiem.Services
         public DbSet<DeviceModel> Devices { get; set; } = null!;
 
 
-
     }
 }
 
