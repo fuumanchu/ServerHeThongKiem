@@ -30,9 +30,6 @@ builder.Services.AddSingleton<IMqttPublishService, MqttPublishService>();
 // 4. Đăng ký Worker sử dụng chung mqttClient ở trên
 builder.Services.AddHostedService<MqttWorkerService>();
 
-// 5. hub 
-builder.Services.AddSignalR();
-
 var app = builder.Build();
 
 

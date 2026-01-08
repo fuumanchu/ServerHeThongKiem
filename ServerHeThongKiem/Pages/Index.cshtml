@@ -1,10 +1,137 @@
 ﻿@page
 @model IndexModel
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = "Dashboard Tổng Quan";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-0">Dashboard</h2>
+            <p class="text-muted">Tổng quan hệ thống giám sát IoT</p>
+        </div>
+        <div>
+            <span class="badge bg-light text-dark border p-2">
+                <i class="bi bi-clock"></i> @DateTime.Now.ToString("dd/MM/yyyy HH:mm")
+            </span>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 h-100 border-start border-5 border-primary">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted text-uppercase fw-bold mb-1">Tổng thiết bị</h6>
+                        <h2 class="mb-0 fw-bold text-primary">@Model.TotalDevices</h2>
+                    </div>
+                    <div class="icon-box bg-primary bg-opacity-10 text-primary rounded-circle p-3">
+                        <i class="bi bi-hdd-stack fs-3"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 h-100 border-start border-5 border-success">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted text-uppercase fw-bold mb-1">Đang hoạt động</h6>
+                        <h2 class="mb-0 fw-bold text-success">@Model.OnlineDevices</h2>
+                    </div>
+                    <div class="icon-box bg-success bg-opacity-10 text-success rounded-circle p-3">
+                        <i class="bi bi-wifi fs-3"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 h-100 border-start border-5 border-danger">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted text-uppercase fw-bold mb-1">Mất kết nối</h6>
+                        <h2 class="mb-0 fw-bold text-danger">@Model.OfflineDevices</h2>
+                    </div>
+                    <div class="icon-box bg-danger bg-opacity-10 text-danger rounded-circle p-3">
+                        <i class="bi bi-wifi-off fs-3"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-pie-chart"></i> Tỷ lệ kết nối</h5>
+                </div>
+                <div class="card-body d-flex justify-content-center align-items-center" style="height: 300px;">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-lightning-charge"></i> Thao tác nhanh</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-3">
+                        <a asp-page="/DeviceManagerPage/Index" class="btn btn-outline-primary py-3 text-start">
+                            <i class="bi bi-list-ul me-2"></i> Quản lý danh sách thiết bị
+                        </a>
+                        <a asp-page="/DeviceManagerPage/Index" class="btn btn-outline-success py-3 text-start">
+                            <i class="bi bi-plus-circle me-2"></i> Thêm thiết bị mới
+                        </a>
+                        <a href="#" class="btn btn-outline-secondary py-3 text-start">
+                            <i class="bi bi-gear me-2"></i> Cấu hình hệ thống
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const ctx = document.getElementById('statusChart').getContext('2d');
+
+        // Dữ liệu từ Model Razor truyền sang JS
+        const onlineCount = @Model.OnlineDevices;
+        const offlineCount = @Model.OfflineDevices;
+
+        // Nếu chưa có thiết bị nào thì hiển thị dữ liệu giả để đẹp
+        const dataValues = (onlineCount + offlineCount === 0) ? [1, 0] : [onlineCount, offlineCount];
+        const bgColors = (onlineCount + offlineCount === 0) ? ['#e0e0e0', '#e0e0e0'] : ['#198754', '#dc3545'];
+
+        new Chart(ctx, {
+            type: 'doughnut', // Biểu đồ hình bánh Donut
+            data: {
+                labels: ['Online (Hoạt động)', 'Offline (Mất kết nối)'],
+                datasets: [{
+                    data: dataValues,
+                    backgroundColor: [
+                        '#198754', // Màu xanh (Bootstrap Success)
+                        '#dc3545'  // Màu đỏ (Bootstrap Danger)
+                    ],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    }
+                }
+            }
+        });
+    });
+</script>
