@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
+builder.Services.AddHostedService<ServerHeThongKiem.Services.DeviceStatusWorker>();
 
 builder.Services.AddDbContext<ServerHeThongKiem.Services.ApplicationDbContext>(options =>
 {

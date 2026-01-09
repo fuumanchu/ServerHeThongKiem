@@ -1,12 +1,9 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using MQTTnet;
-using MQTTnet.Client; 
-using ServerHeThongKiem.Models;
-using ServerHeThongKiem.Services;
+using MQTTnet.Client;
 using ServerHeThongKiem.Services.Interfaces;
 using System.Text;
-using System.Windows; 
 
 namespace ServerHeThongKiem.Services
 {
@@ -17,8 +14,13 @@ namespace ServerHeThongKiem.Services
         private readonly IMqttClient _mqttClient;
         private readonly IDeviceCacheService _deviceCache;
         private readonly IHubContext<DeviceHub> _hubContext;
-        public static IMqttClient Client { get; private set; } = null!;
-        public MqttWorkerService(IServiceScopeFactory scopeFactory, ILogger<MqttWorkerService> logger, IDeviceCacheService deviceCache, IMqttClient mqttClient, IHubContext<DeviceHub> hubContext)
+
+        public MqttWorkerService(
+            IServiceScopeFactory scopeFactory,
+            ILogger<MqttWorkerService> logger,
+            IDeviceCacheService deviceCache,
+            IMqttClient mqttClient,
+            IHubContext<DeviceHub> hubContext)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
@@ -30,99 +32,146 @@ namespace ServerHeThongKiem.Services
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             await _deviceCache.ReloadFromDatabaseAsync();
-           
 
             var options = new MqttClientOptionsBuilder()
                 .WithTcpServer("localhost", 1883)
                 .WithCleanSession()
                 .Build();
 
+            // Nhận message
             _mqttClient.ApplicationMessageReceivedAsync += e =>
             {
-                // Sửa lỗi PayloadSegment thành Payload
-                var payload = System.Text.Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                // Bỏ retained message
+                if (e.ApplicationMessage.Retain)
+                {
+                    _logger.LogWarning($"Bỏ qua retained message: {e.ApplicationMessage.Topic}");
+                    return Task.CompletedTask;
+                }
+
+                var payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
                 var topic = e.ApplicationMessage.Topic;
 
                 return HandleMessage(topic, payload);
             };
 
-            // Logic kết nối lại khi mất mạng
+            // Reconnect
             _mqttClient.DisconnectedAsync += async e =>
             {
-                _logger.LogWarning("Mất kết nối MQTT. Đang thử kết nối lại...");
+                _logger.LogWarning("Mất kết nối MQTT, đang reconnect...");
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+
                 try
                 {
-                    await _mqttClient.ConnectAsync(options, stoppingToken);
+                    if (!_mqttClient.IsConnected)
+                        await _mqttClient.ConnectAsync(options, stoppingToken);
+
+                    await _mqttClient.SubscribeAsync("Devices/+/Data");
+                    _logger.LogInformation("Reconnect MQTT thành công & subscribe lại.");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError($"Không thể kết nối lại: {ex.Message}");
+                    _logger.LogError(ex, "Reconnect MQTT thất bại");
                 }
             };
 
+            // Connect + Subscribe
             await _mqttClient.ConnectAsync(options, stoppingToken);
-
             await _mqttClient.SubscribeAsync("Devices/+/Data");
 
-            _logger.LogInformation("MQTT Worker đã kết nối và đang lắng nghe...");
-
-            // Giữ service chạy cho đến khi bị stop
+            _logger.LogInformation("MQTT Worker đã kết nối & lắng nghe Devices/+/Data");
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
 
         private async Task HandleMessage(string topic, string payload)
         {
+            // Topic dạng: Devices/{deviceId}/Data
             var topicParts = topic.Split('/');
-            if (topicParts.Length < 2) return;
+            if (topicParts.Length < 3) return;
 
             string deviceId = topicParts[1];
 
-            if(!_deviceCache.ExistsDeviceID(deviceId))
+            if (!_deviceCache.ExistsDeviceID(deviceId))
             {
-                _logger.LogWarning($"Nhận dữ liệu từ thiết bị chưa đăng ký: {deviceId}");
+                _logger.LogWarning($"Thiết bị chưa đăng ký: {deviceId}");
                 return;
             }
-            else
-            {
-                //hiện message dữ liệu nhận được để test
-                _logger.LogInformation($"Dữ liệu từ {deviceId}: {payload}");
-                //hithông báo đã nhận dữ liệu từ thiết bị đã đăng ký
-                _logger.LogInformation($"Đã nhận dữ liệu từ thiết bị đã đăng ký: {deviceId}");
-                //hiện thị dữ liệu kiểu message box 
-                var parts = payload.Split('|');
-                var updateData = new
-                {
-                    deviceId = deviceId,
-                    type = parts[0],  // "Input" hoặc "Output"
-                    order = parts[1], // STT (1-23)
-                    value = parts[2]  // Giá trị đo được
-                };
-                await _hubContext.Clients.All.SendAsync("NotifyUpdate", updateData);
 
+            // Parse payload: type|order|value
+            var parts = payload.Split('|');
+            if (parts.Length < 3)
+            {
+                _logger.LogWarning($"Payload sai format: {payload}");
+                return;
             }
+
+            string type = parts[0];        // Input / Output
+            string orderStr = parts[1];
+            string value = parts[2];
+
+            _logger.LogInformation($"MQTT {deviceId}: {payload}");
+            _logger.LogWarning($"CHECK ONLINE: type={type}, order={orderStr}, value={value}");
+
+            // ✅ ONLINE LOGIC: chỉ khi mô phỏng cảm biến (Input) thì mới update LastSeen
+            // (Không cần parse value -> ON/OFF vẫn tính online)
+            if (string.Equals(type, "Input", StringComparison.OrdinalIgnoreCase))
+            {
+                // ✅ ONLINE: cứ có message từ device là coi Online
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                    var dev = await db.Devices.FirstOrDefaultAsync(d => d.DeviceID == deviceId);
+                    if (dev != null)
+                    {
+                        dev.LastSeen = DateTime.Now;
+
+                        // ✅ thêm dòng này
+                        if (dev.Status != "Online")
+                            dev.Status = "Online";
+
+                        await db.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Update LastSeen/Status lỗi cho {deviceId}");
+                }
+            }
+
+                // ✅ SignalR: vẫn gửi toàn bộ dữ liệu
+                await _hubContext.Clients.All.SendAsync("NotifyUpdate", new
+            {
+                deviceId,
+                type,
+                order = orderStr,
+                value
+            });
         }
 
-
-        public async Task PublishMessageAsync(string topic, string payload)
+        // ✅ Publish command
+        public async Task PublishMessageAsync(string deviceId, string payload)
         {
             if (_mqttClient == null || !_mqttClient.IsConnected)
             {
-                _logger.LogWarning("MQTT client chưa kết nối. Không thể gửi tin nhắn.");
+                _logger.LogWarning("MQTT chưa kết nối");
                 return;
             }
-            if(!_deviceCache.ExistsDeviceID(topic.Split('/')[1]))
+
+            if (!_deviceCache.ExistsDeviceID(deviceId))
             {
-                _logger.LogWarning($"Không thể gửi tin nhắn đến thiết bị chưa đăng ký: {topic}");
+                _logger.LogWarning($"Thiết bị chưa đăng ký: {deviceId}");
                 return;
             }
+
             var message = new MqttApplicationMessageBuilder()
-                .WithTopic($"Devices/{topic}/Command")
+                .WithTopic($"Devices/{deviceId}/Command")
                 .WithPayload(payload)
                 .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
                 .Build();
-            _logger.LogInformation($"Đã gửi lệnh tới {topic}: {payload}");
 
+            await _mqttClient.PublishAsync(message);
+            _logger.LogInformation($"Đã gửi lệnh tới {deviceId}: {payload}");
         }
-    } 
-} 
+    }
+}

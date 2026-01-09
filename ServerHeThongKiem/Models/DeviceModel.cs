@@ -15,8 +15,8 @@ namespace ServerHeThongKiem.Models
         public string Customer { get; set; } = ""; 
         public string Address { get; set; } = ""; 
         public string Phone { get; set; } = ""; 
-        public DateTime CreateDate { get; set; } = DateTime.Now; 
-
+        public DateTime CreateDate { get; set; } = DateTime.Now;
+        public DateTime? LastSeen { get; set; }
         // --- Trạng thái vận hành ---
         public string Status { get; set; } = "Offline"; 
         public bool IsAutoMode { get; set; } = true; 

@@ -1,0 +1,94 @@
+﻿
+.device-table th {
+    white-space: nowrap;
+    vertical-align: middle;
+    text-align: center;
+    font-weight: 600;
+    background-color: #f8f9fa;
+}
+
+.device-table td {
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+    .device-table td.text-wrap {
+        white-space: normal;
+        max-width: 220px;
+    }
+
+.device-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+.status-badge {
+    font-size: 0.85rem;
+    padding: 6px 10px;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+.action-buttons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+    .action-buttons .btn {
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .action-buttons i {
+        font-size: 1.1rem;
+    }
+.topbar-search {
+    width: 420px;
+}
+
+.topbar-status {
+    width: 220px;
+}
+
+.topbar-add {
+    white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .topbar-search, .topbar-status, .topbar-add {
+        width: 100%;
+    }
+}
+
+.action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+    .btn-icon i {
+        font-size: 1.1rem;
+    }
+
+td.text-wrap {
+    white-space: normal !important;
+}
+

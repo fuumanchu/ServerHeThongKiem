@@ -2,71 +2,201 @@
 @model ServerHeThongKiem.Pages.DeviceManagerPage.IndexModel
 @{
 }
+<link rel="stylesheet" href="~/css/DeviceManager/index.css" />
 
-<h2 class="text-center mb-3">Devices</h2>
-<a class="btn btn-primary" asp-page="/Devices/Create">New Device</a>
+<h2 class="text-center mb-3">📟 Quản Lý Thiết Bị</h2>
 
-<table class="table table-hover table-bordered">
-    <thead class="table-light">
-        <tr>
-            <th>ID</th>
-            <th>Mã Thiết Bị</th>
-            <th>Tên Thiết Bị</th>
-            <th>Khách Hàng</th>
-            <th>Địa Chỉ</th>
-            <th>Số Điện Thoại</th>
-            <th>Ngày Đăng Ký</th>
-            <th class="text-center">Thao Tác</th>
-        </tr>
-    </thead>
-    <tbody class="table-group-divider">
-        @foreach (var device in Model.DeviceList)
-        {
+<!-- TOP BAR: Search trái + Add button phải -->
+<div class="topbar d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <!-- LEFT -->
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <div class="input-group topbar-search">
+            <span class="input-group-text bg-white">
+                <i class="bi bi-search text-muted"></i>
+            </span>
+            <input id="qInput"
+                   type="text"
+                   class="form-control"
+                   placeholder="Tìm theo mã thiết bị, tên, khách hàng, SĐT, địa chỉ..."
+                   autocomplete="off"
+                   autocorrect="off"
+                   autocapitalize="off"
+                   spellcheck="false" />
+        </div>
+
+        <select id="statusInput" class="form-select topbar-status">
+            <option value="">-- Tất cả trạng thái --</option>
+            <option value="Online">🟢 Online</option>
+            <option value="Offline">🔴 Offline</option>
+        </select>
+
+        <button type="button" class="btn btn-primary" onclick="searchDevices()">
+            <i class="bi bi-search"></i> Tìm
+        </button>
+
+        <button type="button" class="btn btn-outline-secondary" onclick="clearFilter()">
+            <i class="bi bi-x-circle"></i> Xóa lọc
+        </button>
+    </div>
+
+    <!-- RIGHT -->
+    <a class="btn btn-primary topbar-add" asp-page="/Devices/Create">
+        <i class="bi bi-plus-circle"></i> Thêm thiết bị
+    </a>
+</div>
+
+<div class="table-responsive mt-3">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light text-center">
             <tr>
-                <td>@device.Id</td>
-
-                <td><strong>@device.DeviceID</strong></td>
-
-                <td>@device.DeviceName</td>
-
-                <td>@device.Customer</td>
-
-                <td>@device.Address</td>
-
-                <td>@device.Phone</td>
-
-                <td>@device.CreateDate.ToString("dd/MM/yyyy")</td>
-
-                <td class="text-center">
-                    @if (device.Status == "Online")
-                    {
-                        <span class="badge rounded-pill bg-success" title="Online">
-                            <i class="bi bi-circle-fill"></i> ●
-                        </span>
-                    }
-                    else
-                    {
-                        <span class="badge rounded-pill bg-danger" title="Offline">
-                            <i class="bi bi-circle-fill"></i> ●
-                        </span>
-                    }
-                </td>
-
-                <td>
-                    <a asp-page="./Details" asp-route-id="@device.Id" class="btn btn-primary btn-sm">
-                        Xem chi tiết
-                    </a>
-                </td>
-
-                <td class="text-center">
-                    <form method="post" asp-page-handler="Delete" asp-route-id="@device.Id"
-                          onsubmit="return confirm('Bạn có chắc chắn muốn xóa thiết bị @device.DeviceID không?');">
-                        <button type="submit" class="btn btn-outline-danger btn-sm">
-                            <i class="bi bi-trash"></i> Xóa
-                        </button>
-                    </form>
-                </td>
+                <th style="width:60px;">ID</th>
+                <th style="width:130px;">Mã Thiết Bị</th>
+                <th style="width:200px;">Tên Thiết Bị</th>
+                <th style="width:200px;">Khách Hàng</th>
+                <th style="width:260px;">Địa Chỉ</th>
+                <th style="width:130px;">SĐT</th>
+                <th style="width:120px;">Ngày ĐK</th>
+                <th style="width:110px;">Trạng Thái</th>
+                <th style="width:120px;">Thao Tác</th>
             </tr>
+        </thead>
+
+        <!-- ✅ CHỈ 1 TBODY DUY NHẤT -->
+        <tbody id="deviceTbody">
+            <tr>
+                <td colspan="9" class="text-center text-muted py-4">Đang tải dữ liệu...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const tbody = document.getElementById("deviceTbody");
+
+    function escapeHtml(str) {
+        if (str == null) return "";
+        return String(str)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(isoString) {
+        const d = new Date(isoString);
+        if (isNaN(d)) return "";
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+    }
+
+    async function searchDevices() {
+        const q = document.getElementById("qInput").value.trim();
+        const status = document.getElementById("statusInput").value;
+        const url = `/api/devices/search?q=${encodeURIComponent(q)}&status=${encodeURIComponent(status)}`;
+
+        try {
+            const res = await fetch(url, { headers: { "Accept": "application/json" } });
+            if (!res.ok) throw new Error("API lỗi: " + res.status);
+
+            const data = await res.json();
+
+            if (!Array.isArray(data) || data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            Không tìm thấy thiết bị phù hợp.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map(d => {
+                const badge = (d.status === "Online")
+                    ? `<span class="badge bg-success px-3">Online</span>`
+                    : `<span class="badge bg-danger px-3">Offline</span>`;
+
+                const detailsUrl = `/DeviceManagerPage/Details?id=${encodeURIComponent(d.id)}`;
+
+
+
+                return `
+                <tr>
+                    <td class="text-center">${d.id}</td>
+                    <td class="fw-bold text-primary">${escapeHtml(d.deviceID)}</td>
+                    <td>${escapeHtml(d.deviceName)}</td>
+                    <td>${escapeHtml(d.customer)}</td>
+                    <td class="text-wrap">${escapeHtml(d.address)}</td>
+                    <td>${escapeHtml(d.phone)}</td>
+                    <td class="text-center">${formatDate(d.createDate)}</td>
+                    <td class="text-center">${badge}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <a href="${detailsUrl}" class="btn btn-outline-primary btn-icon" title="Xem chi tiết">
+                                <i class="bi bi-eye"></i>
+                            </a>
+
+                            <button type="button"
+                                    class="btn btn-outline-danger btn-icon"
+                                    title="Xóa thiết bị"
+                                    onclick="deleteDevice(${d.id}, '${escapeHtml(d.deviceID)}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join("");
+
+        } catch (err) {
+            console.error(err);
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center text-danger py-4">
+                        Lỗi khi tải dữ liệu tìm kiếm.
+                    </td>
+                </tr>`;
         }
-    </tbody>
-</table>
+    }
+
+    function clearFilter() {
+        document.getElementById("qInput").value = "";
+        document.getElementById("statusInput").value = "";
+        searchDevices();
+    }
+
+    // Enter để tìm
+    document.getElementById("qInput").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            searchDevices();
+        }
+    });
+
+    // Gõ là tự tìm (debounce)
+    let t;
+    document.getElementById("qInput").addEventListener("input", () => {
+        clearTimeout(t);
+        t = setTimeout(searchDevices, 300);
+    });
+
+    document.getElementById("statusInput").addEventListener("change", searchDevices);
+
+    // XÓA BẰNG API
+    async function deleteDevice(id, deviceId) {
+        if (!confirm(`Bạn có chắc chắn muốn xóa thiết bị ${deviceId} không?`)) return;
+
+        const res = await fetch(`/api/devices/${id}`, { method: "DELETE" });
+        if (!res.ok) {
+            alert("Xóa thất bại!");
+            return;
+        }
+
+        searchDevices();
+    }
+
+    // ✅ Vào trang load luôn
+    searchDevices();
+     setInterval(searchDevices, 1000);
+</script>
